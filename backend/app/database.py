@@ -1,10 +1,15 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic_settings import BaseSettings
+import os
 from typing import Optional
+from dotenv import load_dotenv
+
+# Load environment variables from .env file before creating Settings
+load_dotenv()
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
-    mongodb_url: str = "mongodb://admin:password@localhost:27017/finance_wallet?authSource=admin"
+    MONGODB_URL: str = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
     database_name: str = "finance_wallet"
 
     class Config:
@@ -20,7 +25,7 @@ database = None
 async def connect_to_mongo() -> None:
     """Create database connection pool."""
     global client, database
-    client = AsyncIOMotorClient(settings.mongodb_url)
+    client = AsyncIOMotorClient(settings.MONGODB_URL)
     database = client[settings.database_name]
 
 async def close_mongo_connection() -> None:

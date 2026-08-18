@@ -1,0 +1,12 @@
+# Project: Personal Finance Wallet (PWA)
+
+## Tech Stack
+- Frontend: Next.js (App Router), TypeScript, Tailwind CSS, Lucide Icons, PWA (next-pwa / Workbox)
+- Backend: Python (FastAPI), Pydantic v2, Motor (Async MongoDB)
+- Database: MongoDB Atlas
+- Currencies: UAH (base), USD
+
+## Code Conventions
+- Mobile-first layout optimized for fast single-handed input.
+- Strict TypeScript types on frontend, Pydantic schemas on backend.
+- Fast transaction entry flow (focus on UI response time < 100ms).

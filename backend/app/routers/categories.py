@@ -21,24 +21,19 @@ COLLECTION_NAME = "categories"
 
 # Default categories for new users
 DEFAULT_CATEGORIES = [
-    # Expense categories
-    {"name": "Продукти", "type": CategoryType.EXPENSE, "icon": "shopping-cart", "color": "#4CAF50"},
-    {"name": "Кафе", "type": CategoryType.EXPENSE, "icon": "coffee", "color": "#795548"},
-    {"name": "Транспорт", "type": CategoryType.EXPENSE, "icon": "car", "color": "#2196F3"},
-    {"name": "Розваги", "type": CategoryType.EXPENSE, "icon": "gamepad-2", "color": "#9C27B0"},
-    {"name": "Здоров'я", "type": CategoryType.EXPENSE, "icon": "heart-pulse", "color": "#E91E63"},
-    {"name": "Одяг", "type": CategoryType.EXPENSE, "icon": "shirt", "color": "#FF5722"},
-    {"name": "Зв'язок", "type": CategoryType.EXPENSE, "icon": "phone", "color": "#00BCD4"},
-    {"name": "Побут", "type": CategoryType.EXPENSE, "icon": "home", "color": "#607D8B"},
-    {"name": "Освіта", "type": CategoryType.EXPENSE, "icon": "book-open", "color": "#3F51B5"},
-    {"name": "Подарунки", "type": CategoryType.EXPENSE, "icon": "gift", "color": "#FF9800"},
-    {"name": "Інші витрати", "type": CategoryType.EXPENSE, "icon": "more-horizontal", "color": "#9E9E9E"},
-    # Income categories
-    {"name": "Зарплата", "type": CategoryType.INCOME, "icon": "briefcase", "color": "#4CAF50"},
-    {"name": "Фріланс", "type": CategoryType.INCOME, "icon": "laptop", "color": "#2196F3"},
-    {"name": "Подарунок", "type": CategoryType.INCOME, "icon": "gift", "color": "#E91E63"},
-    {"name": "Інвестиції", "type": CategoryType.INCOME, "icon": "trending-up", "color": "#FF9800"},
-    {"name": "Інші надходження", "type": CategoryType.INCOME, "icon": "plus-circle", "color": "#9E9E9E"},
+    # Expense categories (type: "expense")
+    {"name": "Продукти", "type": CategoryType.EXPENSE, "icon": "shopping-cart", "color": "#EF4444"},
+    {"name": "Транспорт", "type": CategoryType.EXPENSE, "icon": "bus", "color": "#F59E0B"},
+    {"name": "Кафе та рестораны", "type": CategoryType.EXPENSE, "icon": "utensils", "color": "#10B981"},
+    {"name": "Розваги", "type": CategoryType.EXPENSE, "icon": "gamepad-2", "color": "#8B5CF6"},
+    {"name": "Житло", "type": CategoryType.EXPENSE, "icon": "home", "color": "#3B82F6"},
+    {"name": "Здоров'я", "type": CategoryType.EXPENSE, "icon": "heart-pulse", "color": "#EC4899"},
+    {"name": "Покупки", "type": CategoryType.EXPENSE, "icon": "shopping-bag", "color": "#6366F1"},
+    # Income categories (type: "income")
+    {"name": "Зарплата", "type": CategoryType.INCOME, "icon": "wallet", "color": "#10B981"},
+    {"name": "Фріланс", "type": CategoryType.INCOME, "icon": "laptop", "color": "#3B82F6"},
+    {"name": "Інвестиції", "type": CategoryType.INCOME, "icon": "trending-up", "color": "#8B5CF6"},
+    {"name": "Подарунки", "type": CategoryType.INCOME, "icon": "gift", "color": "#EC4899"},
 ]
 
 @router.post("/", response_model=Category, status_code=status.HTTP_201_CREATED)
@@ -61,7 +56,7 @@ async def create_category(category: CategoryCreate):
     result = await collection.insert_one(category_dict)
     
     created_category = await collection.find_one({"_id": result.inserted_id})
-    created_category["_id"] = str(created_category["_id"])
+    created_category["id"] = str(created_category.pop("_id"))
     
     return created_category
 
@@ -76,7 +71,7 @@ async def list_categories(type: CategoryType = None):
     
     categories = []
     async for doc in collection.find(query):
-        doc["_id"] = str(doc["_id"])
+        doc["id"] = str(doc.pop("_id"))
         categories.append(doc)
     
     return CategoryList(items=categories, total=len(categories))
@@ -101,7 +96,7 @@ async def get_category(category_id: str):
             detail=f"Category with id '{category_id}' not found"
         )
     
-    category["_id"] = str(category["_id"])
+    category["id"] = str(category.pop("_id"))
     return category
 
 @router.put("/{category_id}", response_model=Category)
@@ -152,7 +147,7 @@ async def update_category(category_id: str, category_update: CategoryUpdate):
     await collection.update_one({"_id": oid}, {"$set": update_data})
     
     updated_category = await collection.find_one({"_id": oid})
-    updated_category["_id"] = str(updated_category["_id"])
+    updated_category["id"] = str(updated_category.pop("_id"))
     
     return updated_category
 
@@ -193,28 +188,19 @@ async def delete_category(category_id: str):
 async def initialize_default_categories():
     """
     Initialize default categories for a new user.
-    Only creates categories that don't already exist.
+    Clears the collection and inserts all default categories.
     """
     collection = get_collection(COLLECTION_NAME)
     
-    created_categories = []
+    # Clear all existing categories
+    await collection.delete_many({})
     
+    # Insert all default categories
+    created_categories = []
     for default_cat in DEFAULT_CATEGORIES:
-        # Check if category already exists
-        existing = await collection.find_one({"name": default_cat["name"]})
-        if existing:
-            continue
-        
-        # Create category
         result = await collection.insert_one(default_cat.copy())
         created = await collection.find_one({"_id": result.inserted_id})
-        created["_id"] = str(created["_id"])
+        created["id"] = str(created.pop("_id"))
         created_categories.append(created)
     
-    # Get all categories (including pre-existing ones)
-    all_categories = []
-    async for doc in collection.find():
-        doc["_id"] = str(doc["_id"])
-        all_categories.append(doc)
-    
-    return CategoryList(items=all_categories, total=len(all_categories))
+    return CategoryList(items=created_categories, total=len(created_categories))

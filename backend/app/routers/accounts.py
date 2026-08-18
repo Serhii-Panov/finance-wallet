@@ -35,7 +35,7 @@ async def create_account(account: AccountCreate):
     result = await collection.insert_one(account_dict)
     
     created_account = await collection.find_one({"_id": result.inserted_id})
-    created_account["_id"] = str(created_account["_id"])
+    created_account["id"] = str(created_account.pop("_id"))
     
     return created_account
 
@@ -46,7 +46,7 @@ async def list_accounts():
     
     accounts = []
     async for doc in collection.find():
-        doc["_id"] = str(doc["_id"])
+        doc["id"] = str(doc.pop("_id"))
         accounts.append(doc)
     
     return AccountList(items=accounts, total=len(accounts))
@@ -71,7 +71,7 @@ async def get_account(account_id: str):
             detail=f"Account with id '{account_id}' not found"
         )
     
-    account["_id"] = str(account["_id"])
+    account["id"] = str(account.pop("_id"))
     return account
 
 @router.put("/{account_id}", response_model=Account)
@@ -118,7 +118,7 @@ async def update_account(account_id: str, account_update: AccountUpdate):
     await collection.update_one({"_id": oid}, {"$set": update_data})
     
     updated_account = await collection.find_one({"_id": oid})
-    updated_account["_id"] = str(updated_account["_id"])
+    updated_account["id"] = str(updated_account.pop("_id"))
     
     return updated_account
 

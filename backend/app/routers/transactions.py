@@ -145,7 +145,7 @@ async def create_transaction(transaction: TransactionCreate):
     await update_account_balance(transaction.account_id, transaction.amount, category_type)
     
     created_transaction = await transactions_collection.find_one({"_id": result.inserted_id})
-    created_transaction["_id"] = str(created_transaction["_id"])
+    created_transaction["id"] = str(created_transaction.pop("_id"))
     
     return created_transaction
 
@@ -183,7 +183,7 @@ async def list_transactions(
     # Get paginated results sorted by date descending
     transactions = []
     async for doc in collection.find(query).sort("date", -1).skip(skip).limit(limit):
-        doc["_id"] = str(doc["_id"])
+        doc["id"] = str(doc.pop("_id"))
         transactions.append(doc)
     
     return TransactionList(items=transactions, total=total)
@@ -208,7 +208,7 @@ async def get_transaction(transaction_id: str):
             detail=f"Transaction with id '{transaction_id}' not found"
         )
     
-    transaction["_id"] = str(transaction["_id"])
+    transaction["id"] = str(transaction.pop("_id"))
     return transaction
 
 @router.put("/{transaction_id}", response_model=Transaction)
@@ -311,7 +311,7 @@ async def update_transaction(transaction_id: str, transaction_update: Transactio
     await transactions_collection.update_one({"_id": oid}, {"$set": update_data})
     
     updated_transaction = await transactions_collection.find_one({"_id": oid})
-    updated_transaction["_id"] = str(updated_transaction["_id"])
+    updated_transaction["id"] = str(updated_transaction.pop("_id"))
     
     return updated_transaction
 
