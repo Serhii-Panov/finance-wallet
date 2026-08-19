@@ -1,46 +1,22 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { 
-  ShoppingCart, Coffee, Car, Gamepad2, Heart, Shirt, 
-  Phone, Home as HomeIcon, BookOpen, Gift, MoreHorizontal,
-  Briefcase, Laptop, TrendingUp, PlusCircle,
-  Wallet, CreditCard, PiggyBank, Check
-} from 'lucide-react';
-import { 
-  accountsApi, 
-  categoriesApi, 
-  transactionsApi, 
-  type Account, 
+import { Check } from 'lucide-react';
+import {
+  accountsApi,
+  categoriesApi,
+  transactionsApi,
+  type Account,
   type Category,
-  type CategoryType 
+  type CategoryType,
+  type Transaction,
+  type TransactionCreate
 } from '@/lib/api';
-
-// Icon mapping for categories
-const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
-  'shopping-cart': ShoppingCart,
-  'coffee': Coffee,
-  'car': Car,
-  'gamepad-2': Gamepad2,
-  'heart-pulse': Heart,
-  'shirt': Shirt,
-  'phone': Phone,
-  'home': HomeIcon,
-  'book-open': BookOpen,
-  'gift': Gift,
-  'more-horizontal': MoreHorizontal,
-  'briefcase': Briefcase,
-  'laptop': Laptop,
-  'trending-up': TrendingUp,
-  'plus-circle': PlusCircle,
-};
-
-// Account type icons
-const accountIcons: Record<string, React.ComponentType<{ className?: string }>> = {
-  'cash': Wallet,
-  'card': CreditCard,
-  'savings': PiggyBank,
-};
+import { BalanceWidget } from '@/components/BalanceWidget';
+import { AccountSelector } from '@/components/AccountSelector';
+import { CategoryGrid } from '@/components/CategoryGrid';
+import { TransactionList, type TransactionDisplay } from '@/components/TransactionList';
+import { EditTransactionModal } from '@/components/EditTransactionModal';
 
 export default function Home() {
   const [amount, setAmount] = useState('');
@@ -48,16 +24,44 @@ export default function Home() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
   const [note, setNote] = useState('');
-  
+
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [transactions, setTransactions] = useState<TransactionDisplay[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingTransactions, setLoadingTransactions] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingTransaction, setEditingTransaction] = useState<TransactionDisplay | null>(null);
+
   const amountInputRef = useRef<HTMLInputElement>(null);
-  
-  // Load accounts and categories on mount
+
+  // Load transactions with related data
+  const loadTransactions = useCallback(async () => {
+    setLoadingTransactions(true);
+    try {
+      const data = await transactionsApi.list({ limit: 20 });
+
+      // Enrich transactions with category and account data
+      const enrichedTransactions: TransactionDisplay[] = data.items.map(tx => {
+        const category = categories.find(c => (c.id || c._id) === tx.category_id);
+        const account = accounts.find(a => (a.id || a._id) === tx.account_id);
+        return { ...tx, category, account };
+      });
+
+      // Sort by date (newest first)
+      enrichedTransactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+      setTransactions(enrichedTransactions);
+    } catch (err) {
+      console.error('Failed to load transactions:', err);
+    } finally {
+      setLoadingTransactions(false);
+    }
+  }, [categories, accounts]);
+
+  // Load accounts, categories, and transactions on mount
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -65,12 +69,10 @@ export default function Home() {
           accountsApi.list(),
           categoriesApi.list(),
         ]);
-        
+
         setAccounts(accountsData.items);
         setCategories(categoriesData.items);
-        
-        console.log("Categories data:", categoriesData.items);
-        
+
         // Auto-select first account
         if (accountsData.items.length > 0 && !selectedAccount) {
           const firstId = accountsData.items[0].id || accountsData.items[0]._id;
@@ -78,37 +80,48 @@ export default function Home() {
             setSelectedAccount(firstId);
           }
         }
+
+        // Load transactions after accounts and categories are fetched
+        const txData = await transactionsApi.list({ limit: 20 });
+
+        // Enrich transactions with category and account data
+        const enrichedTransactions: TransactionDisplay[] = txData.items.map(tx => {
+          const category = categoriesData.items.find(c => (c.id || c._id) === tx.category_id);
+          const account = accountsData.items.find(a => (a.id || a._id) === tx.account_id);
+          return { ...tx, category, account };
+        });
+
+        // Sort by date (newest first)
+        enrichedTransactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+        setTransactions(enrichedTransactions);
       } catch (err) {
         console.error('Failed to load data:', err);
         setError('Не вдалося завантажити дані. Перевірте підключення до сервера.');
       }
     };
-    
+
     loadData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  
+
   // Auto-focus on amount input
   useEffect(() => {
     amountInputRef.current?.focus();
   }, []);
-  
-  // Debug: Log form state changes
-  useEffect(() => {
-    console.log("Form State:", { amount, selectedCategoryId: selectedCategory, selectedAccountId: selectedAccount, loading });
-  }, [amount, selectedCategory, selectedAccount, loading]);
-  
+
   const filteredCategories = categories.filter(c => c.type === transactionType);
-  
+
   const handleSubmit = useCallback(async () => {
     if (!amount || !selectedCategory || !selectedAccount) return;
-    
+
     const numAmount = parseFloat(amount);
     if (isNaN(numAmount) || numAmount <= 0) return;
-    
+
     setLoading(true);
     setError(null);
     setSuccess(false);
-    
+
     try {
       await transactionsApi.create({
         account_id: selectedAccount,
@@ -116,20 +129,23 @@ export default function Home() {
         amount: numAmount,
         note: note || undefined,
       });
-      
+
       // Reset form
       setAmount('');
       setNote('');
       setSelectedCategory(null);
       setSuccess(true);
-      
+
       // Hide success message after 2 seconds
       setTimeout(() => setSuccess(false), 2000);
-      
+
       // Reload accounts to get updated balance
       const accountsData = await accountsApi.list();
       setAccounts(accountsData.items);
-      
+
+      // Reload transactions
+      await loadTransactions();
+
       // Re-focus on amount input
       amountInputRef.current?.focus();
     } catch (err) {
@@ -137,27 +153,68 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [amount, selectedCategory, selectedAccount, note]);
-  
+  }, [amount, selectedCategory, selectedAccount, note, loadTransactions]);
+
+  // Handle delete transaction
+  const handleDeleteTransaction = async (transactionId: string) => {
+    if (deletingId) return; // Prevent double-click
+
+    setDeletingId(transactionId);
+    try {
+      await transactionsApi.delete(transactionId);
+
+      // Reload accounts to get updated balance
+      const accountsData = await accountsApi.list();
+      setAccounts(accountsData.items);
+
+      // Reload transactions
+      await loadTransactions();
+    } catch (err) {
+      console.error('Failed to delete transaction:', err);
+      setError('Не вдалося видалити транзакцію');
+      setTimeout(() => setError(null), 3000);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  // Handle update transaction
+  const handleUpdateTransaction = async (transactionId: string, data: Partial<TransactionCreate>) => {
+    await transactionsApi.update(transactionId, data);
+
+    // Reload accounts to get updated balance
+    const accountsData = await accountsApi.list();
+    setAccounts(accountsData.items);
+
+    // Reload transactions
+    await loadTransactions();
+  };
+
   // Handle Enter key
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !loading) {
       handleSubmit();
     }
   };
-  
-  const formatBalance = (balance: number, currency: string) => {
-    return `${balance.toLocaleString('uk-UA')} ${currency}`;
-  };
-  
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <main className="max-w-md mx-auto px-4 py-6 pb-8">
         {/* Header */}
-        <h1 className="text-xl font-semibold text-gray-900 dark:text-white mb-6 text-center">
+        <h1 className="text-xl font-semibold text-gray-900 dark:text-white mb-4 text-center">
           Нова транзакція
         </h1>
-        
+
+        {/* Total Balance Widget */}
+        <BalanceWidget accounts={accounts} />
+
+        {/* Account Cards */}
+        <AccountSelector
+          accounts={accounts}
+          selectedAccount={selectedAccount}
+          onSelectAccount={setSelectedAccount}
+        />
+
         {/* Success message */}
         {success && (
           <div className="mb-4 p-3 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg flex items-center gap-2">
@@ -165,14 +222,14 @@ export default function Home() {
             <span>Транзакцію збережено!</span>
           </div>
         )}
-        
+
         {/* Error message */}
         {error && (
           <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg">
             {error}
           </div>
         )}
-        
+
         {/* Amount input */}
         <div className="mb-6">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -190,7 +247,7 @@ export default function Home() {
             className="w-full text-4xl font-bold text-center py-4 px-4 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-2xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 outline-none transition-all text-gray-900 dark:text-white"
           />
         </div>
-        
+
         {/* Transaction type toggle */}
         <div className="mb-6">
           <div className="flex bg-gray-200 dark:bg-gray-700 rounded-xl p-1">
@@ -216,70 +273,14 @@ export default function Home() {
             </button>
           </div>
         </div>
-        
+
         {/* Categories grid */}
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-            Категорія
-          </label>
-          <div className="grid grid-cols-4 gap-2">
-            {filteredCategories.map((category, index) => {
-              const IconComponent = category.icon ? iconMap[category.icon] || MoreHorizontal : MoreHorizontal;
-              const categoryId = category.id || category._id;
-              const isSelected = selectedCategory === categoryId;
-              
-              return (
-                <button
-                  key={categoryId || index}
-                  onClick={() => setSelectedCategory(categoryId || null)}
-                  className={`flex flex-col items-center justify-center p-3 rounded-xl transition-all ${
-                    isSelected
-                      ? 'bg-blue-500 text-white shadow-md scale-95'
-                      : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700'
-                  }`}
-                >
-                  <div 
-                    className="w-10 h-10 rounded-full flex items-center justify-center mb-1"
-                    style={{ 
-                      backgroundColor: isSelected 
-                        ? 'rgba(255,255,255,0.2)' 
-                        : `${category.color}20` 
-                    }}
-                  >
-                    <IconComponent 
-                      className="w-5 h-5" 
-                      style={{ color: isSelected ? 'white' : category.color || undefined }}
-                    />
-                  </div>
-                  <span className="text-xs text-center truncate w-full">{category.name}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        
-        {/* Account selector */}
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Рахунок
-          </label>
-          <select
-            value={selectedAccount || ''}
-            onChange={(e) => setSelectedAccount(e.target.value)}
-            className="w-full py-3 px-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 outline-none text-gray-900 dark:text-white appearance-none"
-          >
-            {accounts.map((account, index) => {
-              const IconComponent = accountIcons[account.type] || Wallet;
-              const accountId = account.id || account._id;
-              return (
-                <option key={accountId || index} value={accountId}>
-                  {account.name} — {formatBalance(account.balance, account.currency)}
-                </option>
-              );
-            })}
-          </select>
-        </div>
-        
+        <CategoryGrid
+          categories={filteredCategories}
+          selectedCategory={selectedCategory}
+          onSelectCategory={setSelectedCategory}
+        />
+
         {/* Note input (optional) */}
         <div className="mb-6">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -294,7 +295,7 @@ export default function Home() {
             className="w-full py-3 px-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 outline-none text-gray-900 dark:text-white"
           />
         </div>
-        
+
         {/* Submit button */}
         <button
           onClick={handleSubmit}
@@ -309,11 +310,30 @@ export default function Home() {
         >
           {loading ? 'Збереження...' : 'Зберегти'}
         </button>
-        
+
         {/* Quick tip */}
         <p className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400">
           Натисніть Enter для швидкого збереження
         </p>
+
+        {/* Transaction List Section */}
+        <TransactionList
+          transactions={transactions}
+          loading={loadingTransactions}
+          deletingId={deletingId}
+          onDelete={handleDeleteTransaction}
+          onEdit={setEditingTransaction}
+        />
+
+        {/* Edit Transaction Modal */}
+        <EditTransactionModal
+          key={editingTransaction?.id || editingTransaction?._id || 'no-transaction'}
+          transaction={editingTransaction}
+          accounts={accounts}
+          categories={categories}
+          onClose={() => setEditingTransaction(null)}
+          onSave={handleUpdateTransaction}
+        />
       </main>
     </div>
   );
