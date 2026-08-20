@@ -1,0 +1,25 @@
+# Project: Personal Finance Wallet (PWA)
+
+## Tech Stack
+- Frontend: Next.js (App Router), TypeScript, Tailwind CSS, Lucide Icons, PWA (next-pwa / Workbox). Находится в `/frontend`.
+- Backend: Python (FastAPI), Pydantic v2, Motor (Async MongoDB). Находится в `/backend`.
+- Database: MongoDB Atlas
+- Currencies: UAH (base), USD
+
+## Code Conventions
+- Mobile-first layout optimized for fast single-handed input.
+- Strict TypeScript types on frontend, Pydantic schemas on backend.
+- Fast transaction entry flow (focus on UI response time < 100ms).
+# Архитектура проекта Finance Wallet
+
+## Правила компоненты UI:
+- Все UI-компоненты хранятся в `frontend/src/components/`.
+- Главная страница `frontend/src/app/page.tsx` отвечает за логику и API.
+- Вызовы API вынесены в `frontend/src/lib/api.ts`.
+
+## Поведение при работе с кодом:
+- Все пути к файлам фронтенда ВСЕГДА начинаются с `frontend/src/`.
+- Если нужно отредактировать файл, используй `replace_in_file` или `write_to_file` напрямую без предварительного `search_files`.
+- Если путь к файлу известен, читай его целиком через read_file, а не через множественные search_files.
+- Не сканируй весь проект (list_files) без явной необходимости.
+- Не используй поисковые тулы больше 2–3 раз подряд за одну задачу.

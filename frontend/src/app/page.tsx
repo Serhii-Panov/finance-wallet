@@ -16,6 +16,7 @@ import { BalanceWidget } from '@/components/BalanceWidget';
 import { AccountSelector } from '@/components/AccountSelector';
 import { CategoryGrid } from '@/components/CategoryGrid';
 import { TransactionList, type TransactionDisplay } from '@/components/TransactionList';
+import { TransactionFilters, type FilterState } from '@/components/TransactionFilters';
 import { EditTransactionModal } from '@/components/EditTransactionModal';
 
 export default function Home() {
@@ -34,6 +35,7 @@ export default function Home() {
   const [success, setSuccess] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<TransactionDisplay | null>(null);
+  const [filters, setFilters] = useState<FilterState>({ search: '', type: 'all', accountId: 'all', period: 'all' });
 
   const amountInputRef = useRef<HTMLInputElement>(null);
 
@@ -111,6 +113,44 @@ export default function Home() {
   }, []);
 
   const filteredCategories = categories.filter(c => c.type === transactionType);
+
+  // Filter transactions based on current filters
+  const filteredTransactions = transactions.filter(tx => {
+    // Search filter (by note or category name)
+    if (filters.search) {
+      const q = filters.search.toLowerCase();
+      const matchesNote = tx.note?.toLowerCase().includes(q);
+      const matchesCategory = tx.category?.name?.toLowerCase().includes(q);
+      if (!matchesNote && !matchesCategory) return false;
+    }
+
+    // Type filter
+    if (filters.type !== 'all') {
+      if (tx.category?.type !== filters.type) return false;
+    }
+
+    // Account filter
+    if (filters.accountId !== 'all') {
+      const txAccountId = tx.account_id || tx.account?.id || tx.account?._id;
+      if (txAccountId !== filters.accountId) return false;
+    }
+
+    // Period filter
+    if (filters.period !== 'all') {
+      const txDate = new Date(tx.date);
+      const now = new Date();
+      if (filters.period === 'month') {
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        if (txDate < startOfMonth) return false;
+      } else if (filters.period === 'prev_month') {
+        const startOfPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        if (txDate < startOfPrevMonth || txDate >= startOfMonth) return false;
+      }
+    }
+
+    return true;
+  });
 
   const handleSubmit = useCallback(async () => {
     if (!amount || !selectedCategory || !selectedAccount) return;
@@ -316,9 +356,16 @@ export default function Home() {
           Натисніть Enter для швидкого збереження
         </p>
 
+        {/* Transaction Filters */}
+        <TransactionFilters
+          accounts={accounts}
+          filters={filters}
+          onChange={setFilters}
+        />
+
         {/* Transaction List Section */}
         <TransactionList
-          transactions={transactions}
+          transactions={filteredTransactions}
           loading={loadingTransactions}
           deletingId={deletingId}
           onDelete={handleDeleteTransaction}
