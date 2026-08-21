@@ -1,389 +1,209 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { Check } from 'lucide-react';
-import {
-  accountsApi,
-  categoriesApi,
+import { useState, useEffect } from 'react';
+import { Plus } from 'lucide-react';
+import { 
+  accountsApi, 
+  categoriesApi, 
   transactionsApi,
-  type Account,
+  type Account, 
   type Category,
-  type CategoryType,
-  type Transaction,
-  type TransactionCreate
+  type CategoryType
 } from '@/lib/api';
-import { BalanceWidget } from '@/components/BalanceWidget';
-import { AccountSelector } from '@/components/AccountSelector';
-import { CategoryGrid } from '@/components/CategoryGrid';
 import { TransactionList, type TransactionDisplay } from '@/components/TransactionList';
-import { TransactionFilters, type FilterState } from '@/components/TransactionFilters';
-import { EditTransactionModal } from '@/components/EditTransactionModal';
+import { TransactionFilters, FilterState } from '@/components/TransactionFilters';
+import { BalanceWidget } from '@/components/BalanceWidget';
 import { CategoryChart } from '@/components/CategoryChart';
+import { AddTransactionModal } from '@/components/AddTransactionModal';
 
 export default function Home() {
-  const [amount, setAmount] = useState('');
-  const [transactionType, setTransactionType] = useState<CategoryType>('expense');
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
-  const [note, setNote] = useState('');
-
+  const [transactions, setTransactions] = useState<TransactionDisplay[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [transactions, setTransactions] = useState<TransactionDisplay[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [loadingTransactions, setLoadingTransactions] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [editingTransaction, setEditingTransaction] = useState<TransactionDisplay | null>(null);
-  const [filters, setFilters] = useState<FilterState>({ search: '', type: 'all', accountId: 'all', period: 'all' });
 
-  const amountInputRef = useRef<HTMLInputElement>(null);
+  // Активный таб: Витрати / Доходи / Усі
+  const [activeTab, setActiveTab] = useState<CategoryType | 'all'>('expense');
 
-  // Load transactions with related data
-  const loadTransactions = useCallback(async () => {
-    setLoadingTransactions(true);
+  // Модальное окно
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Фильтры поиска
+  const [filters, setFilters] = useState<FilterState>({
+    search: '',
+    type: 'all',
+    accountId: 'all',
+    period: 'all',
+  });
+
+  const fetchData = async () => {
     try {
-      const data = await transactionsApi.list({ limit: 20 });
-
-      // Enrich transactions with category and account data
-      const enrichedTransactions: TransactionDisplay[] = data.items.map(tx => {
-        const category = categories.find(c => (c.id || c._id) === tx.category_id);
-        const account = accounts.find(a => (a.id || a._id) === tx.account_id);
-        return { ...tx, category, account };
-      });
-
-      // Sort by date (newest first)
-      enrichedTransactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-      setTransactions(enrichedTransactions);
+      setLoading(true);
+      const [txData, accData, catData] = await Promise.all([
+        transactionsApi.list(),
+        accountsApi.list(),
+        categoriesApi.list(),
+      ]);
+      // API returns { items: T[], total: number }
+      setTransactions(txData.items as TransactionDisplay[]);
+      setAccounts(accData.items);
+      setCategories(catData.items);
     } catch (err) {
-      console.error('Failed to load transactions:', err);
+      console.error('Failed to fetch data:', err);
     } finally {
-      setLoadingTransactions(false);
+      setLoading(false);
     }
-  }, [categories, accounts]);
+  };
 
-  // Load accounts, categories, and transactions on mount
+  // Initialize data on mount
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const [accountsData, categoriesData] = await Promise.all([
-          accountsApi.list(),
-          categoriesApi.list(),
-        ]);
-
-        setAccounts(accountsData.items);
-        setCategories(categoriesData.items);
-
-        // Auto-select first account
-        if (accountsData.items.length > 0 && !selectedAccount) {
-          const firstId = accountsData.items[0].id || accountsData.items[0]._id;
-          if (firstId) {
-            setSelectedAccount(firstId);
-          }
-        }
-
-        // Load transactions after accounts and categories are fetched
-        const txData = await transactionsApi.list({ limit: 20 });
-
-        // Enrich transactions with category and account data
-        const enrichedTransactions: TransactionDisplay[] = txData.items.map(tx => {
-          const category = categoriesData.items.find(c => (c.id || c._id) === tx.category_id);
-          const account = accountsData.items.find(a => (a.id || a._id) === tx.account_id);
-          return { ...tx, category, account };
-        });
-
-        // Sort by date (newest first)
-        enrichedTransactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-        setTransactions(enrichedTransactions);
-      } catch (err) {
-        console.error('Failed to load data:', err);
-        setError('Не вдалося завантажити дані. Перевірте підключення до сервера.');
-      }
-    };
-
-    loadData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchData();
   }, []);
 
-  // Auto-focus on amount input
-  useEffect(() => {
-    amountInputRef.current?.focus();
-  }, []);
+  // Фильтрация транзакций
+  const filteredTransactions = transactions.filter((tx) => {
+    // 1. Фильтр по активному табу (Витрати / Доходи)
+    if (activeTab !== 'all' && tx.category?.type !== activeTab) {
+      return false;
+    }
 
-  const filteredCategories = categories.filter(c => c.type === transactionType);
+    // 2. Фильтр по выбранному счету
+    if (filters.accountId !== 'all' && tx.account_id !== filters.accountId) {
+      return false;
+    }
 
-  // Filter transactions based on current filters
-  const filteredTransactions = transactions.filter(tx => {
-    // Search filter (by note or category name)
-    if (filters.search) {
+    // 3. Текстовый поиск
+    if (filters.search.trim()) {
       const q = filters.search.toLowerCase();
-      const matchesNote = tx.note?.toLowerCase().includes(q);
-      const matchesCategory = tx.category?.name?.toLowerCase().includes(q);
-      if (!matchesNote && !matchesCategory) return false;
+      const noteMatch = tx.note?.toLowerCase().includes(q);
+      const catMatch = tx.category?.name?.toLowerCase().includes(q);
+      if (!noteMatch && !catMatch) return false;
     }
 
-    // Type filter
-    if (filters.type !== 'all') {
-      if (tx.category?.type !== filters.type) return false;
-    }
-
-    // Account filter
-    if (filters.accountId !== 'all') {
-      const txAccountId = tx.account_id || tx.account?.id || tx.account?._id;
-      if (txAccountId !== filters.accountId) return false;
-    }
-
-    // Period filter
+    // 4. Фильтр по периоду
     if (filters.period !== 'all') {
       const txDate = new Date(tx.date);
       const now = new Date();
+
       if (filters.period === 'month') {
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        if (txDate < startOfMonth) return false;
+        if (txDate.getMonth() !== now.getMonth() || txDate.getFullYear() !== now.getFullYear()) {
+          return false;
+        }
       } else if (filters.period === 'prev_month') {
-        const startOfPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        if (txDate < startOfPrevMonth || txDate >= startOfMonth) return false;
+        const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        if (
+          txDate.getMonth() !== prevMonthDate.getMonth() ||
+          txDate.getFullYear() !== prevMonthDate.getFullYear()
+        ) {
+          return false;
+        }
       }
     }
 
     return true;
   });
 
-  const handleSubmit = useCallback(async () => {
-    if (!amount || !selectedCategory || !selectedAccount) return;
-
-    const numAmount = parseFloat(amount);
-    if (isNaN(numAmount) || numAmount <= 0) return;
-
-    setLoading(true);
-    setError(null);
-    setSuccess(false);
-
+  const handleDelete = async (id: string) => {
+    setDeletingId(id);
     try {
-      await transactionsApi.create({
-        account_id: selectedAccount,
-        category_id: selectedCategory,
-        amount: numAmount,
-        note: note || undefined,
-      });
-
-      // Reset form
-      setAmount('');
-      setNote('');
-      setSelectedCategory(null);
-      setSuccess(true);
-
-      // Hide success message after 2 seconds
-      setTimeout(() => setSuccess(false), 2000);
-
-      // Reload accounts to get updated balance
-      const accountsData = await accountsApi.list();
-      setAccounts(accountsData.items);
-
-      // Reload transactions
-      await loadTransactions();
-
-      // Re-focus on amount input
-      amountInputRef.current?.focus();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка збереження');
-    } finally {
-      setLoading(false);
-    }
-  }, [amount, selectedCategory, selectedAccount, note, loadTransactions]);
-
-  // Handle delete transaction
-  const handleDeleteTransaction = async (transactionId: string) => {
-    if (deletingId) return; // Prevent double-click
-
-    setDeletingId(transactionId);
-    try {
-      await transactionsApi.delete(transactionId);
-
-      // Reload accounts to get updated balance
-      const accountsData = await accountsApi.list();
-      setAccounts(accountsData.items);
-
-      // Reload transactions
-      await loadTransactions();
+      await transactionsApi.delete(id);
+      fetchData();
     } catch (err) {
       console.error('Failed to delete transaction:', err);
-      setError('Не вдалося видалити транзакцію');
-      setTimeout(() => setError(null), 3000);
     } finally {
       setDeletingId(null);
     }
   };
 
-  // Handle update transaction
-  const handleUpdateTransaction = async (transactionId: string, data: Partial<TransactionCreate>) => {
-    await transactionsApi.update(transactionId, data);
-
-    // Reload accounts to get updated balance
-    const accountsData = await accountsApi.list();
-    setAccounts(accountsData.items);
-
-    // Reload transactions
-    await loadTransactions();
-  };
-
-  // Handle Enter key
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !loading) {
-      handleSubmit();
-    }
+  const handleEdit = (transaction: TransactionDisplay) => {
+    // TODO: Implement edit functionality
+    console.log('Edit transaction:', transaction);
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <main className="max-w-md mx-auto px-4 py-6 pb-8">
-        {/* Header */}
-        <h1 className="text-xl font-semibold text-gray-900 dark:text-white mb-4 text-center">
-          Нова транзакція
-        </h1>
+    <main className="min-h-screen bg-gray-900 text-white p-4 sm:p-8 pb-24">
+      <div className="max-w-4xl mx-auto space-y-6">
+        {/* Шапка с кнопкой добавления */}
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold">Гаманець</h1>
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-medium px-4 py-2.5 rounded-2xl transition shadow-lg shadow-blue-500/20"
+          >
+            <Plus className="w-5 h-5" />
+            <span>Нова транзакція</span>
+          </button>
+        </div>
 
-        {/* Total Balance Widget */}
+        {/* Счета и общий баланс */}
         <BalanceWidget accounts={accounts} />
 
-        {/* Account Cards */}
-        <AccountSelector
-          accounts={accounts}
-          selectedAccount={selectedAccount}
-          onSelectAccount={setSelectedAccount}
-        />
+        {/* Переключатель табов */}
+        <div className="flex bg-gray-800/80 p-1.5 rounded-2xl border border-gray-700/60">
+          <button
+            onClick={() => setActiveTab('expense')}
+            className={`flex-1 py-2.5 text-sm font-semibold rounded-xl transition ${
+              activeTab === 'expense'
+                ? 'bg-red-500/20 text-red-400 border border-red-500/30 shadow'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            Витрати
+          </button>
+          <button
+            onClick={() => setActiveTab('income')}
+            className={`flex-1 py-2.5 text-sm font-semibold rounded-xl transition ${
+              activeTab === 'income'
+                ? 'bg-green-500/20 text-green-400 border border-green-500/30 shadow'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            Доходи
+          </button>
+          <button
+            onClick={() => setActiveTab('all')}
+            className={`flex-1 py-2.5 text-sm font-semibold rounded-xl transition ${
+              activeTab === 'all'
+                ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30 shadow'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            Усі
+          </button>
+        </div>
 
-        {/* Success message */}
-        {success && (
-          <div className="mb-4 p-3 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg flex items-center gap-2">
-            <Check className="w-5 h-5" />
-            <span>Транзакцію збережено!</span>
-          </div>
+        {/* Динамическая диаграмма категорий */}
+        {activeTab !== 'all' && (
+          <CategoryChart transactions={transactions} categories={categories} type={activeTab} />
         )}
 
-        {/* Error message */}
-        {error && (
-          <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg">
-            {error}
-          </div>
-        )}
-
-        {/* Amount input */}
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Сума
-          </label>
-          <input
-            ref={amountInputRef}
-            type="number"
-            inputMode="decimal"
-            step="0.01"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="0.00"
-            className="w-full text-4xl font-bold text-center py-4 px-4 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-2xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 outline-none transition-all text-gray-900 dark:text-white"
-          />
-        </div>
-
-        {/* Transaction type toggle */}
-        <div className="mb-6">
-          <div className="flex bg-gray-200 dark:bg-gray-700 rounded-xl p-1">
-            <button
-              onClick={() => setTransactionType('expense')}
-              className={`flex-1 py-3 px-4 rounded-lg font-medium transition-all ${
-                transactionType === 'expense'
-                  ? 'bg-red-500 text-white shadow-md'
-                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600'
-              }`}
-            >
-              Витрата
-            </button>
-            <button
-              onClick={() => setTransactionType('income')}
-              className={`flex-1 py-3 px-4 rounded-lg font-medium transition-all ${
-                transactionType === 'income'
-                  ? 'bg-green-500 text-white shadow-md'
-                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600'
-              }`}
-            >
-              Дохід
-            </button>
-          </div>
-        </div>
-
-        {/* Categories grid */}
-        <CategoryGrid
-          categories={filteredCategories}
-          selectedCategory={selectedCategory}
-          onSelectCategory={setSelectedCategory}
-        />
-
-        {/* Note input (optional) */}
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Нотатка (необов'язково)
-          </label>
-          <input
-            type="text"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Додайте нотатку..."
-            className="w-full py-3 px-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 outline-none text-gray-900 dark:text-white"
-          />
-        </div>
-
-        {/* Submit button */}
-        <button
-          onClick={handleSubmit}
-          disabled={!amount || Number(amount) <= 0 || !selectedCategory || !selectedAccount || loading}
-          className={`w-full py-4 px-6 rounded-xl font-semibold text-lg transition-all ${
-            loading || !amount || Number(amount) <= 0 || !selectedCategory || !selectedAccount
-              ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
-              : transactionType === 'expense'
-                ? 'bg-red-500 hover:bg-red-600 text-white shadow-lg hover:shadow-xl'
-                : 'bg-green-500 hover:bg-green-600 text-white shadow-lg hover:shadow-xl'
-          }`}
-        >
-          {loading ? 'Збереження...' : 'Зберегти'}
-        </button>
-
-        {/* Quick tip */}
-        <p className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400">
-          Натисніть Enter для швидкого збереження
-        </p>
-
-        {/* Transaction Filters */}
+        {/* Поисковая панель */}
         <TransactionFilters
           accounts={accounts}
           filters={filters}
           onChange={setFilters}
         />
 
-        {/* Transaction List Section */}
+        {/* Список операций */}
         <TransactionList
           transactions={filteredTransactions}
-          loading={loadingTransactions}
+          loading={loading}
           deletingId={deletingId}
-          onDelete={handleDeleteTransaction}
-          onEdit={setEditingTransaction}
+          onDelete={handleDelete}
+          onEdit={handleEdit}
         />
-        <CategoryChart transactions={filteredTransactions} categories={categories} />
+      </div>
 
-        {/* Edit Transaction Modal */}
-        <EditTransactionModal
-          key={editingTransaction?.id || editingTransaction?._id || 'no-transaction'}
-          transaction={editingTransaction}
-          accounts={accounts}
-          categories={categories}
-          onClose={() => setEditingTransaction(null)}
-          onSave={handleUpdateTransaction}
-        />
-      </main>
-    </div>
+      {/* Модальное окно создания */}
+      <AddTransactionModal
+        open={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        accounts={accounts}
+        categories={categories}
+        onSuccess={fetchData}
+      />
+    </main>
   );
 }

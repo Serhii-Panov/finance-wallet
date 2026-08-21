@@ -2,29 +2,39 @@
 
 import { useMemo } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
-import type { Category } from '@/lib/api';
+import type { Category, CategoryType } from '@/lib/api';
 import type { TransactionDisplay } from './TransactionList';
 
 interface CategoryChartProps {
   transactions: TransactionDisplay[];
   categories: Category[];
+  type: CategoryType;
 }
 
-const COLORS = [
-  '#3B82F6', '#10B981', '#F59E0B', '#EF4444', 
-  '#8B5CF6', '#EC4899', '#14B8A6', '#6366F1'
+// Green palette for income
+const INCOME_COLORS = [
+  '#10B981', '#22C55E', '#16A34A', '#15803D',
+  '#4ADE80', '#34D399', '#059669', '#065F46',
 ];
 
-export function CategoryChart({ transactions, categories }: CategoryChartProps) {
-  const chartData = useMemo(() => {
-    // 1. Фильтруем только расходы
-    const expenses = transactions.filter((tx) => tx.category?.type === 'expense');
+// Mixed red/blue palette for expenses
+const EXPENSE_COLORS = [
+  '#3B82F6', '#EF4444', '#F59E0B', '#8B5CF6',
+  '#EC4899', '#14B8A6', '#6366F1', '#DC2626',
+];
 
-    // 2. Группируем суммы по id категории
+export function CategoryChart({ transactions, categories, type }: CategoryChartProps) {
+  const COLORS = type === 'income' ? INCOME_COLORS : EXPENSE_COLORS;
+
+  const chartData = useMemo(() => {
+    // Filter transactions by the specified type
+    const filtered = transactions.filter((tx) => tx.category?.type === type);
+
+    // Group totals by category name
     const categoryTotals: Record<string, { name: string; value: number }> = {};
 
-    expenses.forEach((tx) => {
-      const catName = tx.category?.name || 'Без категории';
+    filtered.forEach((tx) => {
+      const catName = tx.category?.name || 'Без категорії';
       const amount = Math.abs(tx.amount);
 
       if (!categoryTotals[catName]) {
@@ -34,19 +44,23 @@ export function CategoryChart({ transactions, categories }: CategoryChartProps) 
     });
 
     return Object.values(categoryTotals).sort((a, b) => b.value - a.value);
-  }, [transactions]);
+  }, [transactions, type]);
 
   if (chartData.length === 0) {
     return (
       <div className="bg-gray-800/50 border border-gray-700/60 rounded-2xl p-6 text-center text-gray-400">
-        Нет данных о расходах для отображения диаграммы
+        {type === 'income'
+          ? 'Немає даних про доходи для відображення діаграми'
+          : 'Немає даних про витрати для відображення діаграми'}
       </div>
     );
   }
 
   return (
     <div className="bg-gray-800/50 border border-gray-700/60 rounded-2xl p-6 mb-6">
-      <h2 className="text-lg font-semibold text-white mb-4">Структура расходов</h2>
+      <h2 className="text-lg font-semibold text-white mb-4">
+        {type === 'income' ? 'Структура доходів' : 'Структура витрат'}
+      </h2>
       <div className="h-64 w-full">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
