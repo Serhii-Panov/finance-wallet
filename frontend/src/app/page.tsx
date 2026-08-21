@@ -18,6 +18,7 @@ import { CategoryGrid } from '@/components/CategoryGrid';
 import { TransactionList, type TransactionDisplay } from '@/components/TransactionList';
 import { TransactionFilters, type FilterState } from '@/components/TransactionFilters';
 import { EditTransactionModal } from '@/components/EditTransactionModal';
+import { CategoryChart } from '@/components/CategoryChart';
 
 export default function Home() {
   const [amount, setAmount] = useState('');
@@ -371,6 +372,7 @@ export default function Home() {
           onDelete={handleDeleteTransaction}
           onEdit={setEditingTransaction}
         />
+        <CategoryChart transactions={filteredTransactions} categories={categories} />
 
         {/* Edit Transaction Modal */}
         <EditTransactionModal
