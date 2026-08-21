@@ -116,6 +116,9 @@ export const categoriesApi = {
     const params = type ? `?type=${type}` : '';
     return apiFetch<ApiResponse<Category>>(`/categories/${params}`);
   },
+
+  getAll: () =>
+    apiFetch<ApiResponse<Category>>('/categories/'),
   
   get: (id: string) => 
     apiFetch<Category>(`/categories/${id}`),

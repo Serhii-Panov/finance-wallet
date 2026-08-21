@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus } from 'lucide-react';
+import Link from 'next/link';
+import { Plus, Tags } from 'lucide-react';
 import { 
   accountsApi, 
   categoriesApi, 
@@ -153,13 +154,22 @@ export default function Home() {
         {/* Шапка с кнопкой добавления */}
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Гаманець</h1>
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-medium px-4 py-2.5 rounded-2xl transition shadow-lg shadow-blue-500/20"
-          >
-            <Plus className="w-5 h-5" />
-            <span>Нова транзакція</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/categories"
+              className="rounded-xl p-2.5 text-gray-300 transition hover:bg-gray-800 hover:text-white"
+              title="Категорії"
+            >
+              <Tags className="h-5 w-5" />
+            </Link>
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-2.5 font-medium text-white shadow-lg shadow-blue-500/20 transition hover:bg-blue-500"
+            >
+              <Plus className="h-5 w-5" />
+              <span>Нова транзакція</span>
+            </button>
+          </div>
         </div>
 
         {/* Счета и общий баланс */}
