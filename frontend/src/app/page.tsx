@@ -15,6 +15,7 @@ import { TransactionFilters, FilterState } from '@/components/TransactionFilters
 import { BalanceWidget } from '@/components/BalanceWidget';
 import { CategoryChart } from '@/components/CategoryChart';
 import { AddTransactionModal } from '@/components/AddTransactionModal';
+import { EditTransactionModal } from '@/components/EditTransactionModal';
 
 export default function Home() {
   const [transactions, setTransactions] = useState<TransactionDisplay[]>([]);
@@ -28,6 +29,7 @@ export default function Home() {
 
   // Модальное окно
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState<TransactionDisplay | null>(null);
 
   // Фильтры поиска
   const [filters, setFilters] = useState<FilterState>({
@@ -45,8 +47,27 @@ export default function Home() {
         accountsApi.list(),
         categoriesApi.list(),
       ]);
-      // API returns { items: T[], total: number }
-      setTransactions(txData.items as TransactionDisplay[]);
+
+      const accountsById = new Map(
+        accData.items.flatMap((account) => {
+          const id = account.id || account._id;
+          return id ? [[id, account] as const] : [];
+        })
+      );
+      const categoriesById = new Map(
+        catData.items.flatMap((category) => {
+          const id = category.id || category._id;
+          return id ? [[id, category] as const] : [];
+        })
+      );
+
+      setTransactions(
+        txData.items.map((transaction) => ({
+          ...transaction,
+          account: accountsById.get(transaction.account_id),
+          category: categoriesById.get(transaction.category_id),
+        })) as TransactionDisplay[]
+      );
       setAccounts(accData.items);
       setCategories(catData.items);
     } catch (err) {
@@ -109,7 +130,7 @@ export default function Home() {
     setDeletingId(id);
     try {
       await transactionsApi.delete(id);
-      fetchData();
+      await fetchData();
     } catch (err) {
       console.error('Failed to delete transaction:', err);
     } finally {
@@ -118,8 +139,12 @@ export default function Home() {
   };
 
   const handleEdit = (transaction: TransactionDisplay) => {
-    // TODO: Implement edit functionality
-    console.log('Edit transaction:', transaction);
+    setEditingTransaction(transaction);
+  };
+
+  const handleUpdate = async (id: string, data: Parameters<typeof transactionsApi.update>[1]) => {
+    await transactionsApi.update(id, data);
+    await fetchData();
   };
 
   return (
@@ -203,6 +228,15 @@ export default function Home() {
         accounts={accounts}
         categories={categories}
         onSuccess={fetchData}
+      />
+
+      <EditTransactionModal
+        key={editingTransaction?.id || editingTransaction?._id || 'empty'}
+        transaction={editingTransaction}
+        accounts={accounts}
+        categories={categories}
+        onClose={() => setEditingTransaction(null)}
+        onSave={handleUpdate}
       />
     </main>
   );

@@ -85,6 +85,11 @@ const ICON_BY_KEY: Record<string, LucideIcon> = {
 const DEFAULT_ACCENT = '#818CF8';
 const DEFAULT_BADGE_GRADIENT = 'linear-gradient(135deg, #818CF8 0%, #C084FC 55%, #F472B6 100%)';
 
+function getLocalDateTimeValue(date: Date = new Date()): string {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 function getCategoryVisual(category: Category): CategoryVisual {
   const fromDict = CATEGORY_STYLES[category.name.trim().toLowerCase()];
   const IconFromDb = category.icon ? ICON_BY_KEY[category.icon] : undefined;
@@ -147,6 +152,7 @@ export function AddTransactionModal({
   const [amount, setAmount] = useState('');
   const [selectedAccount, setSelectedAccount] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
+  const [date, setDate] = useState(getLocalDateTimeValue());
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -160,6 +166,7 @@ export function AddTransactionModal({
     if (open) {
       setTransactionType('expense');
       setAmount('');
+      setDate(getLocalDateTimeValue());
       setNote('');
       setSelectedCategory('');
       setError(null);
@@ -202,6 +209,7 @@ export function AddTransactionModal({
         account_id: selectedAccount,
         category_id: selectedCategory,
         amount: numAmount,
+        date: date ? new Date(date).toISOString() : undefined,
         note: note || undefined,
       });
       onSuccess();
@@ -306,6 +314,19 @@ export function AddTransactionModal({
               onChange={(e) => setAmount(e.target.value)}
               placeholder="0.00"
               className="w-full text-2xl font-bold text-center py-3 px-4 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 outline-none transition-all text-gray-900 dark:text-white"
+            />
+          </div>
+
+          {/* Date */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Дата та час
+            </label>
+            <input
+              type="datetime-local"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full py-3 px-4 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 outline-none text-gray-900 dark:text-white"
             />
           </div>
 
