@@ -121,6 +121,14 @@ export default function Home() {
         ) {
           return false;
         }
+      } else if (filters.period === 'custom') {
+        if (filters.startDate && txDate < new Date(filters.startDate)) {
+          return false;
+        }
+
+        if (filters.endDate && txDate > new Date(`${filters.endDate}T23:59:59`)) {
+          return false;
+        }
       }
     }
 

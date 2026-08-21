@@ -3,13 +3,15 @@
 import { Search } from 'lucide-react';
 import { Account, CategoryType } from '@/lib/api';
 
-export type DatePeriod = 'all' | 'month' | 'prev_month';
+export type DatePeriod = 'all' | 'month' | 'prev_month' | 'custom';
 
 export interface FilterState {
   search: string;
   type: CategoryType | 'all';
   accountId: string | 'all';
   period: DatePeriod;
+  startDate?: string;
+  endDate?: string;
 }
 
 interface TransactionFiltersProps {
@@ -76,8 +78,32 @@ export function TransactionFilters({
           <option value="all">За весь час</option>
           <option value="month">Цей місяць</option>
           <option value="prev_month">Минулий місяць</option>
+          <option value="custom">Довільний період</option>
         </select>
       </div>
+
+      {filters.period === 'custom' && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label className="text-sm text-gray-300">
+            З
+            <input
+              type="date"
+              value={filters.startDate || ''}
+              onChange={(e) => onChange({ ...filters, startDate: e.target.value })}
+              className="mt-1 w-full rounded-xl border border-gray-700 bg-gray-900/80 p-2.5 text-sm text-white focus:border-blue-500 focus:outline-none"
+            />
+          </label>
+          <label className="text-sm text-gray-300">
+            По
+            <input
+              type="date"
+              value={filters.endDate || ''}
+              onChange={(e) => onChange({ ...filters, endDate: e.target.value })}
+              className="mt-1 w-full rounded-xl border border-gray-700 bg-gray-900/80 p-2.5 text-sm text-white focus:border-blue-500 focus:outline-none"
+            />
+          </label>
+        </div>
+      )}
     </div>
   );
 }
