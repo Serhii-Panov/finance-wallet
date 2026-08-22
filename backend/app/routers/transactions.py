@@ -128,13 +128,6 @@ async def create_transaction(transaction: TransactionCreate):
     
     category_type = CategoryType(category["type"])
     
-    # Check if account has sufficient balance for expense
-    if category_type == CategoryType.EXPENSE and account["balance"] < transaction.amount:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Insufficient balance. Current: {account['balance']}, Required: {transaction.amount}"
-        )
-    
     # Create transaction
     transaction_dict = transaction.model_dump()
     transaction_dict["currency"] = transaction.currency.value
@@ -270,7 +263,7 @@ async def update_transaction(transaction_id: str, transaction_update: Transactio
                 detail=f"Category with id '{new_category_id}' not found"
             )
         
-        # Check balance for expense on new account
+        # Validate the new account for expense transactions
         if new_category_type == CategoryType.EXPENSE:
             accounts_collection = get_collection("accounts")
             try:
@@ -288,18 +281,6 @@ async def update_transaction(transaction_id: str, transaction_update: Transactio
                     detail=f"Account with id '{new_account_id}' not found"
                 )
             
-            if account["balance"] < new_amount:
-                # Restore original balance before raising error
-                await update_account_balance(
-                    existing["account_id"],
-                    existing["amount"],
-                    original_category_type
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Insufficient balance on target account. Current: {account['balance']}, Required: {new_amount}"
-                )
-        
         # Apply new transaction effect
         await update_account_balance(new_account_id, new_amount, new_category_type)
     

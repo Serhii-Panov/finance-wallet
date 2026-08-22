@@ -25,6 +25,7 @@ import {
   TrendingUp,
   Gift,
   Coffee,
+  ArrowRight,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -33,6 +34,8 @@ import {
   type Category,
   type CategoryType,
 } from '@/lib/api';
+
+type TransactionMode = 'expense' | 'income' | 'transfer';
 
 interface CategoryVisual {
   Icon: LucideIcon;
@@ -148,43 +151,47 @@ export function AddTransactionModal({
   onClose,
   onSuccess,
 }: AddTransactionModalProps) {
-  const [transactionType, setTransactionType] = useState<CategoryType>('expense');
+  const [mode, setMode] = useState<TransactionMode>('expense');
   const [amount, setAmount] = useState('');
   const [selectedAccount, setSelectedAccount] = useState('');
+  const [selectedToAccount, setSelectedToAccount] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [date, setDate] = useState(getLocalDateTimeValue());
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showAccountList, setShowAccountList] = useState(false);
+  const [showToAccountList, setShowToAccountList] = useState(false);
   const [showCategoryList, setShowCategoryList] = useState(false);
   const accountListRef = useRef<HTMLDivElement>(null);
+  const toAccountListRef = useRef<HTMLDivElement>(null);
   const categoryListRef = useRef<HTMLDivElement>(null);
 
   // Reset form whenever the modal is opened
   useEffect(() => {
-    if (open) {
-      setTransactionType('expense');
-      setAmount('');
-      setDate(getLocalDateTimeValue());
-      setNote('');
-      setSelectedCategory('');
-      setError(null);
-      setShowAccountList(false);
-      setShowCategoryList(false);
-      // Auto-select first account
-      const firstAccountId = accounts[0]?.id || accounts[0]?._id || '';
-      setSelectedAccount(firstAccountId);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!open) return;
+    
+    // Reset all form state when modal opens
+    setMode('expense');
+    setAmount('');
+    setDate(getLocalDateTimeValue());
+    setNote('');
+    setSelectedCategory('');
+    setSelectedToAccount('');
+    setError(null);
+    setShowAccountList(false);
+    setShowToAccountList(false);
+    setShowCategoryList(false);
+    const firstAccountId = accounts[0]?.id || accounts[0]?._id || '';
+    setSelectedAccount(firstAccountId);
   }, [open, accounts]);
 
   // Filter categories by selected type
-  const filteredCategories = categories.filter((c) => c.type === transactionType);
+  const filteredCategories = categories.filter((c) => c.type === (mode as CategoryType));
 
   // Reset selected category when switching type if it no longer matches
-  const handleTypeChange = (type: CategoryType) => {
-    setTransactionType(type);
+  const handleModeChange = (newMode: TransactionMode) => {
+    setMode(newMode);
     setSelectedCategory('');
     setShowCategoryList(false);
   };
@@ -196,22 +203,58 @@ export function AddTransactionModal({
       return;
     }
 
-    if (!selectedAccount || !selectedCategory) {
-      setError('Оберіть рахунок та категорію');
+    if (!selectedAccount) {
+      setError('Оберіть рахунок');
       return;
+    }
+
+    if (mode === 'transfer') {
+      if (!selectedToAccount) {
+        setError('Оберіть рахунок для переводу');
+        return;
+      }
+      if (selectedAccount === selectedToAccount) {
+        setError('Оберіть різні рахунки');
+        return;
+      }
+    } else {
+      if (!selectedCategory) {
+        setError('Оберіть категорію');
+        return;
+      }
     }
 
     setLoading(true);
     setError(null);
 
     try {
-      await transactionsApi.create({
-        account_id: selectedAccount,
-        category_id: selectedCategory,
-        amount: numAmount,
-        date: date ? new Date(date).toISOString() : undefined,
-        note: note || undefined,
-      });
+      if (mode === 'transfer') {
+        // Create debit transaction from source account
+        await transactionsApi.create({
+          account_id: selectedAccount,
+          category_id: selectedCategory || '', // Empty for transfer
+          amount: numAmount,
+          date: date ? new Date(date).toISOString() : undefined,
+          note: note ? `Переказ на: ${accounts.find(a => (a.id || a._id) === selectedToAccount)?.name || 'рахунок'}` : undefined,
+        });
+        
+        // Create credit transaction to destination account
+        await transactionsApi.create({
+          account_id: selectedToAccount,
+          category_id: selectedCategory || '', // Empty for transfer
+          amount: numAmount,
+          date: date ? new Date(date).toISOString() : undefined,
+          note: note ? `Переказ з: ${accounts.find(a => (a.id || a._id) === selectedAccount)?.name || 'рахунку'}` : undefined,
+        });
+      } else {
+        await transactionsApi.create({
+          account_id: selectedAccount,
+          category_id: selectedCategory,
+          amount: numAmount,
+          date: date ? new Date(date).toISOString() : undefined,
+          note: note || undefined,
+        });
+      }
       onSuccess();
       onClose();
     } catch (err) {
@@ -232,6 +275,10 @@ export function AddTransactionModal({
   const visibleAccounts = accounts.slice(0, 3);
   const hasMoreAccounts = accounts.length > 3;
 
+  // Visible to accounts (first 3)
+  const visibleToAccounts = accounts.filter(a => (a.id || a._id) !== selectedAccount).slice(0, 3);
+  const hasMoreToAccounts = accounts.filter(a => (a.id || a._id) !== selectedAccount).length > 3;
+
   // Visible categories (first 7)
   const visibleCategories = filteredCategories.slice(0, 7);
   const hasMoreCategories = filteredCategories.length > 7;
@@ -251,7 +298,7 @@ export function AddTransactionModal({
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Нова транзакція
+            {mode === 'transfer' ? 'Новий переказ' : 'Нова транзакція'}
           </h2>
           <button
             onClick={onClose}
@@ -273,14 +320,14 @@ export function AddTransactionModal({
           {/* Transaction type toggle */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Тип транзакції
+              Тип операції
             </label>
-            <div className="flex bg-gray-200 dark:bg-gray-700 rounded-xl p-1">
+            <div className="flex bg-gray-200 dark:bg-gray-700 rounded-xl p-1 gap-1">
               <button
                 type="button"
-                onClick={() => handleTypeChange('expense')}
-                className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
-                  transactionType === 'expense'
+                onClick={() => handleModeChange('expense')}
+                className={`flex-1 py-2 px-3 rounded-lg font-medium transition-all text-sm ${
+                  mode === 'expense'
                     ? 'bg-red-500 text-white shadow-md'
                     : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600'
                 }`}
@@ -289,14 +336,25 @@ export function AddTransactionModal({
               </button>
               <button
                 type="button"
-                onClick={() => handleTypeChange('income')}
-                className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
-                  transactionType === 'income'
+                onClick={() => handleModeChange('income')}
+                className={`flex-1 py-2 px-3 rounded-lg font-medium transition-all text-sm ${
+                  mode === 'income'
                     ? 'bg-green-500 text-white shadow-md'
                     : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600'
                 }`}
               >
                 Дохід
+              </button>
+              <button
+                type="button"
+                onClick={() => handleModeChange('transfer')}
+                className={`flex-1 py-2 px-3 rounded-lg font-medium transition-all text-sm ${
+                  mode === 'transfer'
+                    ? 'bg-blue-500 text-white shadow-md'
+                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600'
+                }`}
+              >
+                Переказ
               </button>
             </div>
           </div>
@@ -333,7 +391,7 @@ export function AddTransactionModal({
           {/* Account - Interactive Grid */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Рахунок
+              {mode === 'transfer' ? 'З рахунку' : 'Рахунок'}
             </label>
             <div className="relative">
               <div className="flex flex-wrap gap-2">
@@ -412,70 +470,105 @@ export function AddTransactionModal({
             </div>
           </div>
 
-          {/* Category - Interactive Grid */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Категорія
-            </label>
-            <div className="relative">
-              <div className="grid grid-cols-4 gap-2">
-                {visibleCategories.map((category) => {
-                  const categoryId = category.id || category._id || '';
-                  const isSelected = selectedCategory === categoryId;
-                  const { color, useGradient } = getCategoryVisual(category);
-                  const accent = useGradient ? DEFAULT_ACCENT : color;
-                  return (
+          {/* To Account (for transfers) */}
+          {mode === 'transfer' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                На рахунок
+              </label>
+              <div className="relative">
+                <div className="flex flex-wrap gap-2">
+                  {visibleToAccounts.map((account) => {
+                    const accountId = account.id || account._id || '';
+                    const isSelected = selectedToAccount === accountId;
+                    return (
+                      <button
+                        key={accountId}
+                        type="button"
+                        onClick={() => {
+                          setSelectedToAccount(accountId);
+                          setShowToAccountList(false);
+                        }}
+                        className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium transition-all min-w-0 flex-1 min-w-[120px] ${
+                          isSelected
+                            ? 'bg-green-50 dark:bg-green-900/30 border-2 border-green-500 text-green-700 dark:text-green-300 shadow-sm'
+                            : 'bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:border-green-300 dark:hover:border-green-700 hover:bg-green-50 dark:hover:bg-green-900/20'
+                        }`}
+                      >
+                        <span className="flex-shrink-0 text-green-500">{getAccountIcon(account)}</span>
+                        <span className="truncate">{account.name}</span>
+                        {isSelected && <Check className="w-4 h-4 text-green-500 flex-shrink-0" />}
+                      </button>
+                    );
+                  })}
+                  {hasMoreToAccounts && (
                     <button
-                      key={categoryId}
                       type="button"
-                      onClick={() => {
-                        setSelectedCategory(categoryId);
-                        setShowCategoryList(false);
-                      }}
-                      className={`relative flex flex-col items-center justify-start gap-1.5 px-1.5 py-2.5 rounded-xl text-xs font-medium transition-all min-h-[88px] ${
-                        isSelected
-                          ? 'border-2 shadow-sm text-gray-800 dark:text-gray-100'
-                          : 'bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:border-gray-300 dark:hover:border-gray-500'
-                      }`}
-                      style={
-                        isSelected
-                          ? {
-                              backgroundColor: `${accent}18`,
-                              borderColor: accent,
-                            }
-                          : undefined
-                      }
+                      onClick={() => setShowToAccountList(true)}
+                      className="flex items-center justify-center gap-1 px-3 py-2.5 rounded-xl text-sm font-medium bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-green-300 dark:hover:border-green-700 hover:bg-green-50 dark:hover:bg-green-900/20 transition-all min-w-[80px]"
                     >
-                      <CategoryBadge category={category} selected={isSelected} />
-                      <span className="line-clamp-2 leading-tight text-center w-full px-0.5">
-                        {category.name}
-                      </span>
+                      <MoreHorizontal className="w-5 h-5" />
+                      <span>Ще</span>
+                      <ChevronDown className="w-4 h-4" />
                     </button>
-                  );
-                })}
-                {hasMoreCategories && (
-                  <button
-                    type="button"
-                    onClick={() => setShowCategoryList(true)}
-                    className="flex flex-col items-center justify-start gap-1.5 px-1.5 py-2.5 rounded-xl text-xs font-medium bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-gray-300 dark:hover:border-gray-500 transition-all min-h-[88px]"
+                  )}
+                </div>
+
+                {/* Full To Account List Dropdown */}
+                {showToAccountList && (
+                  <div
+                    ref={toAccountListRef}
+                    className="absolute z-20 top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl shadow-lg overflow-hidden"
                   >
-                    <span className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 bg-gray-200/80 dark:bg-gray-600/80 text-gray-500 dark:text-gray-300 shadow-sm ring-1 ring-black/5 dark:ring-white/10">
-                      <MoreHorizontal className="w-4 h-4" />
-                    </span>
-                    <span className="line-clamp-2 leading-tight text-center">Ще</span>
-                  </button>
+                    {accounts
+                      .filter(a => (a.id || a._id) !== selectedAccount)
+                      .map((account) => {
+                        const accountId = account.id || account._id || '';
+                        const isSelected = selectedToAccount === accountId;
+                        return (
+                          <button
+                            key={accountId}
+                            type="button"
+                            onClick={() => {
+                              setSelectedToAccount(accountId);
+                              setShowToAccountList(false);
+                            }}
+                            className={`w-full px-4 py-3 text-left flex items-center gap-3 transition-colors ${
+                              isSelected
+                                ? 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                                : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'
+                            }`}
+                          >
+                            <span className="flex-shrink-0 text-green-500">{getAccountIcon(account)}</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium truncate">{account.name}</p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                                {account.balance.toLocaleString('uk-UA')} {account.currency}
+                              </p>
+                            </div>
+                            {isSelected && <Check className="w-5 h-5 text-green-500 flex-shrink-0" />}
+                          </button>
+                        );
+                      })}
+                  </div>
                 )}
               </div>
+            </div>
+          )}
 
-              {/* Full Category List Modal */}
-              {showCategoryList && (
-                <div
-                  ref={categoryListRef}
-                  className="absolute z-20 top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl shadow-lg overflow-hidden max-h-64 overflow-y-auto"
-                >
-                  {filteredCategories.map((category) => {
+          {/* Category - Interactive Grid (hidden for transfers) */}
+          {mode !== 'transfer' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Категорія
+              </label>
+              <div className="relative">
+                <div className="grid grid-cols-4 gap-2">
+                  {visibleCategories.map((category) => {
                     const categoryId = category.id || category._id || '';
                     const isSelected = selectedCategory === categoryId;
+                    const { color, useGradient } = getCategoryVisual(category);
+                    const accent = useGradient ? DEFAULT_ACCENT : color;
                     return (
                       <button
                         key={categoryId}
@@ -484,22 +577,75 @@ export function AddTransactionModal({
                           setSelectedCategory(categoryId);
                           setShowCategoryList(false);
                         }}
-                        className={`w-full px-4 py-3 text-left flex items-center gap-3 transition-colors ${
+                        className={`relative flex flex-col items-center justify-start gap-1.5 px-1.5 py-2.5 rounded-xl text-xs font-medium transition-all min-h-[88px] ${
                           isSelected
-                            ? 'bg-gray-50 dark:bg-gray-700/80 text-gray-900 dark:text-gray-100'
-                            : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'
+                            ? 'border-2 shadow-sm text-gray-800 dark:text-gray-100'
+                            : 'bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:border-gray-300 dark:hover:border-gray-500'
                         }`}
+                        style={
+                          isSelected
+                            ? {
+                                backgroundColor: `${accent}18`,
+                                borderColor: accent,
+                              }
+                            : undefined
+                        }
                       >
-                        <CategoryBadge category={category} size="sm" selected={isSelected} />
-                        <span className="truncate leading-tight">{category.name}</span>
-                        {isSelected && <Check className="w-5 h-5 text-gray-500 flex-shrink-0" />}
+                        <CategoryBadge category={category} selected={isSelected} />
+                        <span className="line-clamp-2 leading-tight text-center w-full px-0.5">
+                          {category.name}
+                        </span>
                       </button>
                     );
                   })}
+                  {hasMoreCategories && (
+                    <button
+                      type="button"
+                      onClick={() => setShowCategoryList(true)}
+                      className="flex flex-col items-center justify-start gap-1.5 px-1.5 py-2.5 rounded-xl text-xs font-medium bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-gray-300 dark:hover:border-gray-500 transition-all min-h-[88px]"
+                    >
+                      <span className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 bg-gray-200/80 dark:bg-gray-600/80 text-gray-500 dark:text-gray-300 shadow-sm ring-1 ring-black/5 dark:ring-white/10">
+                        <MoreHorizontal className="w-4 h-4" />
+                      </span>
+                      <span className="line-clamp-2 leading-tight text-center">Ще</span>
+                    </button>
+                  )}
                 </div>
-              )}
+
+                {/* Full Category List Modal */}
+                {showCategoryList && (
+                  <div
+                    ref={categoryListRef}
+                    className="absolute z-20 top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl shadow-lg overflow-hidden max-h-64 overflow-y-auto"
+                  >
+                    {filteredCategories.map((category) => {
+                      const categoryId = category.id || category._id || '';
+                      const isSelected = selectedCategory === categoryId;
+                      return (
+                        <button
+                          key={categoryId}
+                          type="button"
+                          onClick={() => {
+                            setSelectedCategory(categoryId);
+                            setShowCategoryList(false);
+                          }}
+                          className={`w-full px-4 py-3 text-left flex items-center gap-3 transition-colors ${
+                            isSelected
+                              ? 'bg-gray-50 dark:bg-gray-700/80 text-gray-900 dark:text-gray-100'
+                              : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'
+                          }`}
+                        >
+                          <CategoryBadge category={category} size="sm" selected={isSelected} />
+                          <span className="truncate leading-tight">{category.name}</span>
+                          {isSelected && <Check className="w-5 h-5 text-gray-500 flex-shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Note */}
           <div>
@@ -510,7 +656,7 @@ export function AddTransactionModal({
               type="text"
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="Додайте нотатку..."
+              placeholder={mode === 'transfer' ? 'Додайте нотатку до переказу...' : 'Додайте нотатку...'}
               className="w-full py-3 px-4 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 outline-none text-gray-900 dark:text-white"
             />
           </div>
@@ -529,17 +675,30 @@ export function AddTransactionModal({
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={loading || !amount || Number(amount) <= 0 || !selectedAccount || !selectedCategory}
+            disabled={
+              loading ||
+              !amount ||
+              Number(amount) <= 0 ||
+              !selectedAccount ||
+              (mode === 'transfer' ? !selectedToAccount : !selectedCategory)
+            }
             className={`flex-1 py-3 px-4 rounded-xl font-semibold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
-              transactionType === 'expense'
+              mode === 'expense'
                 ? 'bg-red-500 hover:bg-red-600'
-                : 'bg-green-500 hover:bg-green-600'
+                : mode === 'income'
+                  ? 'bg-green-500 hover:bg-green-600'
+                  : 'bg-blue-500 hover:bg-blue-600'
             }`}
           >
             {loading ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                Збереження...
+                {mode === 'transfer' ? 'Переказ...' : 'Збереження...'}
+              </>
+            ) : mode === 'transfer' ? (
+              <>
+                <ArrowRight className="w-5 h-5" />
+                Переказати
               </>
             ) : (
               'Зберегти'

@@ -74,7 +74,11 @@ async function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<T> 
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
-    throw new Error(error.detail || 'Request failed');
+    const apiError = new Error(
+      typeof error.detail === 'string' ? error.detail : 'Request failed'
+    );
+    Object.assign(apiError, { response: { data: error } });
+    throw apiError;
   }
 
   if (response.status === 204) {

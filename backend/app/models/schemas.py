@@ -21,6 +21,7 @@ class Currency(str, Enum):
     """Supported currencies."""
     UAH = "UAH"
     USD = "USD"
+    EUR = "EUR"
 
 class CategoryType(str, Enum):
     """Category types."""
@@ -58,7 +59,7 @@ class AccountBase(BaseSchema):
     name: str = Field(..., min_length=1, max_length=100, description="Account name")
     type: AccountType = Field(default=AccountType.CARD, description="Account type")
     currency: Currency = Field(default=Currency.UAH, description="Account currency")
-    balance: float = Field(default=0.0, ge=0, description="Current balance")
+    balance: float = Field(default=0.0, description="Current balance")
 
 class AccountCreate(AccountBase):
     """Schema for creating an account."""
@@ -69,7 +70,7 @@ class AccountUpdate(BaseSchema):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     type: Optional[AccountType] = None
     currency: Optional[Currency] = None
-    balance: Optional[float] = Field(None, ge=0)
+    balance: Optional[float] = Field(None)
 
 class AccountInDB(AccountBase):
     """Schema for account in database."""
